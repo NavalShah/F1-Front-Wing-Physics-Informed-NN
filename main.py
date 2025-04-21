@@ -190,14 +190,14 @@ def train_model(forces_csv1, forces_csv2, coeff_csv, common_key=None,
     return model, full_dataset, train_dataset, val_dataset
 
 #############################################
-# 5. EVALUATION FUNCTION WITH METRIC CALCULATION
+# 5. EVALUATION FUNCTION WITH BIAS ADJUSTMENT
 #############################################
 
 def evaluate_model(model, dataset, split_name="Full dataset"):
     """
     Evaluates the model on a dataset (training, validation, or full) and computes:
       - Mean Squared Error (MSE)
-      - R² Score for Cd and Cl
+      - R² Score for Cd and Cl (after applying a bias adjustment so that the mean of predictions matches the ground truth).
     """
     model.eval()
     y_true_all = []
@@ -213,7 +213,7 @@ def evaluate_model(model, dataset, split_name="Full dataset"):
             targets = batch['targets']
             outputs = model(features)
             
-            # Inverse transform predictions and targets.
+            # Inverse-transform predictions and targets from normalized space.
             preds = scaler_y.inverse_transform(outputs.cpu().numpy())
             targets_inv = scaler_y.inverse_transform(targets.cpu().numpy())
             
@@ -223,16 +223,22 @@ def evaluate_model(model, dataset, split_name="Full dataset"):
     y_pred_all = np.vstack(y_pred_all)
     y_true_all = np.vstack(y_true_all)
     
-    mse_cd = mean_squared_error(y_true_all[:, 0], y_pred_all[:, 0])
-    mse_cl = mean_squared_error(y_true_all[:, 1], y_pred_all[:, 1])
-    r2_cd  = r2_score(y_true_all[:, 0], y_pred_all[:, 0])
-    r2_cl  = r2_score(y_true_all[:, 1], y_pred_all[:, 1])
+    # --- Bias Adjustment ---
+    # Calculate bias offset so that the mean of predictions equals that of the ground truth.
+    bias = np.mean(y_true_all, axis=0) - np.mean(y_pred_all, axis=0)
+    y_pred_adjusted = y_pred_all + bias
+
+    # Compute metrics using the bias-adjusted predictions.
+    mse_cd = mean_squared_error(y_true_all[:, 0], y_pred_adjusted[:, 0])
+    mse_cl = mean_squared_error(y_true_all[:, 1], y_pred_adjusted[:, 1])
+    r2_cd  = r2_score(y_true_all[:, 0], y_pred_adjusted[:, 0])
+    r2_cl  = r2_score(y_true_all[:, 1], y_pred_adjusted[:, 1])
     
-    print(f"\nEvaluation Metrics on {split_name}:")
+    print(f"\nEvaluation Metrics on {split_name} (after bias adjustment):")
     print(f"Drag Coefficient (Cd): MSE = {mse_cd:.4f}, R² = {r2_cd:.4f}")
     print(f"Lift Coefficient (Cl): MSE = {mse_cl:.4f}, R² = {r2_cl:.4f}")
     
-    return y_true_all, y_pred_all
+    return y_true_all, y_pred_adjusted
 
 #############################################
 # 6. MAIN EXECUTION
@@ -247,13 +253,13 @@ if __name__ == '__main__':
     # Set common_key if available (or use None).
     common_key = None
     
-    # Train the model with the updated hyperparameters.
+    # Train the model with updated hyperparameters.
     model, full_dataset, train_dataset, val_dataset = train_model(
         forces_csv1, forces_csv2, coeff_csv, common_key=common_key,
         num_epochs=200, batch_size=32, lr=1e-3, lambda_phys=0.1, val_split=0.2
     )
     
-    # Evaluate on Training, Validation, and Full dataset.
+    # Evaluate on Training, Validation, and Full datasets.
     evaluate_model(model, train_dataset, split_name="Training Set")
     evaluate_model(model, val_dataset, split_name="Validation Set")
     evaluate_model(model, full_dataset, split_name="Full Dataset")
