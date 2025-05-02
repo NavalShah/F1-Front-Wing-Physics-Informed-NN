@@ -215,7 +215,6 @@ def evaluate_model(model, dataset, split_name="Full dataset"):
             features = batch['features']
             targets = batch['targets']
             outputs = model(features)
-            
             # Inverse-transform predictions and targets from normalized space.
             preds = scaler_y.inverse_transform(outputs.cpu().numpy())
             targets_inv = scaler_y.inverse_transform(targets.cpu().numpy())
@@ -234,7 +233,7 @@ def evaluate_model(model, dataset, split_name="Full dataset"):
     reg_lift = LinearRegression().fit(y_pred_all[:, 1].reshape(-1, 1), y_true_all[:, 1])
     y_pred_lift_adjusted = reg_lift.predict(y_pred_all[:, 1].reshape(-1, 1))
     
-    # Combine adjusted predictions.
+    # Combine adjusted predictions. Adjusted predictions are the best I think
     y_pred_adjusted = np.column_stack([y_pred_drag_adjusted, y_pred_lift_adjusted])
     
     # Compute metrics based on the adjusted predictions.
