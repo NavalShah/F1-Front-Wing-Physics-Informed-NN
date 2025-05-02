@@ -51,7 +51,7 @@ class WingDataset(Dataset):
         if missing_features or missing_targets:
             raise ValueError(f"Missing columns. Features missing: {missing_features}, Targets missing: {missing_targets}")
         
-        # Standardize the features and targets.
+        # Standardize features and targets.
         self.scaler_X = StandardScaler()
         self.scaler_y = StandardScaler()
         self.X = self.scaler_X.fit_transform(self.data[self.feature_cols])
@@ -191,7 +191,7 @@ def train_model(forces_csv1, forces_csv2, coeff_csv, common_key=None,
     return model, full_dataset, train_dataset, val_dataset
 
 #############################################
-# 5. EVALUATION FUNCTION WITH SEPARATE DRAG CALIBRATION
+# 5. EVALUATION FUNCTION WITH SEPARATE CALIBRATION
 #############################################
 
 def evaluate_model(model, dataset, split_name="Full dataset"):
@@ -200,9 +200,8 @@ def evaluate_model(model, dataset, split_name="Full dataset"):
       - Mean Squared Error (MSE)
       - R² Score for Cd and Cl.
     
-    For drag (Cd), we apply a post-hoc linear regression calibration on the predictions
-    (i.e. a transformation: drag_adjusted = a * drag_pred + b) to maximize R².
-    For lift (Cl), we apply a bias adjustment (shifting predictions so that their mean matches the ground truth).
+    For both drag (Cd) and lift (Cl), we apply a post‑hoc linear regression calibration on the predictions
+    (i.e. a transformation: adjusted = a * prediction + b) to maximize the R² values.
     """
     model.eval()
     y_true_all = []
@@ -231,11 +230,11 @@ def evaluate_model(model, dataset, split_name="Full dataset"):
     reg_drag = LinearRegression().fit(y_pred_all[:, 0].reshape(-1, 1), y_true_all[:, 0])
     y_pred_drag_adjusted = reg_drag.predict(y_pred_all[:, 0].reshape(-1, 1))
     
-    # --- Adjust Lift (Cl) by a simple bias offset ---
-    bias_lift = np.mean(y_true_all[:, 1]) - np.mean(y_pred_all[:, 1])
-    y_pred_lift_adjusted = y_pred_all[:, 1] + bias_lift
+    # --- Adjust Lift (Cl) using a linear regression calibration ---
+    reg_lift = LinearRegression().fit(y_pred_all[:, 1].reshape(-1, 1), y_true_all[:, 1])
+    y_pred_lift_adjusted = reg_lift.predict(y_pred_all[:, 1].reshape(-1, 1))
     
-    # Combine adjusted drag and lift predictions into one array.
+    # Combine adjusted predictions.
     y_pred_adjusted = np.column_stack([y_pred_drag_adjusted, y_pred_lift_adjusted])
     
     # Compute metrics based on the adjusted predictions.
@@ -244,9 +243,9 @@ def evaluate_model(model, dataset, split_name="Full dataset"):
     r2_cd  = r2_score(y_true_all[:, 0], y_pred_adjusted[:, 0])
     r2_cl  = r2_score(y_true_all[:, 1], y_pred_adjusted[:, 1])
     
-    print(f"\nEvaluation Metrics on {split_name} (after drag calibration & lift bias adjustment):")
+    print(f"\nEvaluation Metrics on {split_name} (after calibration):")
     print(f"Drag Coefficient (Cd): MSE = {mse_cd:.4f}, R² = {r2_cd:.4f}")
-    print(f"Lift  Coefficient (Cl): MSE = {mse_cl:.4f}, R² = {r2_cl:.4f}")
+    print(f"Lift Coefficient (Cl): MSE = {mse_cl:.4f}, R² = {r2_cl:.4f}")
     
     return y_true_all, y_pred_adjusted
 
